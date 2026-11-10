@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {request} from 'playwright';
-import {initValue,mailPayload} from './web-readonly.mjs';
+import {initValue,mailPayload,userAgent} from './web-readonly.mjs';
 const data=process.env.HSE_DATA_DIR;
 const state=JSON.parse(fs.readFileSync(path.join(data,'auth/browser/state.json')));
 const config=JSON.parse(fs.readFileSync(path.join(data,'config.json')));
-const client=await request.newContext({storageState:state,timeout:25000});
+const client=await request.newContext({storageState:state,userAgent,timeout:25000});
 const result={};
 try {
  try {

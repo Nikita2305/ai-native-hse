@@ -282,5 +282,106 @@ class LmsTests(unittest.TestCase):
             self.assertFalse(responses)
 
 
+class SmartProTests(unittest.TestCase):
+    def test_sso_encodes_url_and_keeps_callback_token_out_of_process_args(self):
+        from ai_native_hse import smartpro
+        from types import SimpleNamespace
+
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(common, "DATA", Path(folder)),
+        ):
+            jar = Path(folder) / "cookies.txt"
+            jar.write_text("# synthetic cookie jar\n")
+            calls = []
+
+            def curl(command, input, **kwargs):
+                calls.append(command)
+                url = json.loads(input.partition(" = ")[2])
+                if len(calls) == 1:
+                    self.assertIn("scope=openid%20profile", url)
+                    location = "https://idm.hse.ru/continue"
+                else:
+                    self.assertEqual(url, "https://idm.hse.ru/continue")
+                    location = "https://smartpro.hse.ru/token?token=fixture"
+                self.assertNotIn(url, command)
+                Path(command[command.index("--dump-header") + 1]).write_text(
+                    "Location: " + location + "\r\n"
+                )
+                return SimpleNamespace(returncode=0, stdout="302")
+
+            with patch.object(smartpro.subprocess, "run", side_effect=curl):
+                self.assertEqual(
+                    smartpro.sso_callback(
+                        "https://saml.hse.ru/auth?scope=openid profile", jar
+                    ),
+                    "fixture",
+                )
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(jar.read_text(), "# synthetic cookie jar\n")
+            self.assertFalse(
+                any(p.name == "response.html" for p in Path(folder).rglob("*"))
+            )
+
+    def test_profile_login_does_not_select_role_implicitly(self):
+        from ai_native_hse import smartpro
+
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(smartpro, "DATA", Path(folder)),
+        ):
+            jar = Path(folder) / "auth/lms/cookies.txt"
+            jar.parent.mkdir(parents=True)
+            jar.touch()
+
+            def read(path, value=None, **kwargs):
+                if path.startswith("/api/sso/auth?"):
+                    return "https://saml.hse.ru/auth"
+                self.assertEqual(path, "/api/sso/user")
+                return {
+                    "accessToken": "fixture",
+                    "activeRole": None,
+                    "roles": [{"name": "EPP_STUDENT"}],
+                }
+
+            with (
+                patch.object(smartpro, "call", side_effect=read) as api,
+                patch.object(smartpro, "sso_callback", return_value="fixture"),
+            ):
+                self.assertEqual(smartpro.token(require_role=False), "fixture")
+                with self.assertRaisesRegex(
+                    RuntimeError, "SMARTPRO_ROLE_SELECTION_REQUIRED"
+                ):
+                    smartpro.token()
+                self.assertTrue(
+                    all(
+                        call.kwargs.get("method", "GET") == "GET"
+                        for call in api.call_args_list
+                    )
+                )
+
+    def test_sso_rejects_redirect_outside_hse_before_next_request(self):
+        from ai_native_hse import smartpro
+        from types import SimpleNamespace
+
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.object(common, "DATA", Path(folder)),
+        ):
+            jar = Path(folder) / "cookies.txt"
+            jar.write_text("# synthetic\n")
+
+            def curl(command, **kwargs):
+                Path(command[command.index("--dump-header") + 1]).write_text(
+                    "Location: https://example.org/callback\r\n"
+                )
+                return SimpleNamespace(returncode=0, stdout="302")
+
+            with patch.object(smartpro.subprocess, "run", side_effect=curl) as request:
+                with self.assertRaisesRegex(RuntimeError, "SMARTPRO_REDIRECT_REJECTED"):
+                    smartpro.sso_callback("https://saml.hse.ru/auth", jar)
+                self.assertEqual(request.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

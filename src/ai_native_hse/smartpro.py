@@ -1,24 +1,80 @@
 """Read SmartPro entities with an existing HSE SSO session. Never submit applications."""
 
 import argparse
-import http.cookiejar
 import json
+import re
+import shutil
+import subprocess
 import urllib.parse
 import urllib.request
-from .common import DATA, emit
+from .common import DATA, emit, workspace
 
 ORIGIN = "https://smartpro.hse.ru"
 
 
-class SafeRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        url = urllib.parse.urlsplit(newurl)
-        if url.scheme != "https" or url.hostname not in (
-            "smartpro.hse.ru",
-            "saml.hse.ru",
-        ):
-            raise RuntimeError("SMARTPRO_REDIRECT_REJECTED")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+def sso_callback(url, jar_path):
+    """Use curl for HSE SSO: its edge rejects urllib even with a valid cookie."""
+    if not shutil.which("curl"):
+        raise RuntimeError("CURL_REQUIRED")
+    with workspace("smartpro") as (temp, auth):
+        cookies = temp / "cookies.txt"
+        shutil.copyfile(jar_path, cookies)
+        for _ in range(20):
+            url = urllib.parse.quote(url, safe=":/?&=%")
+            parsed = urllib.parse.urlsplit(url)
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname
+                not in ("smartpro.hse.ru", "saml.hse.ru", "idm.hse.ru")
+                or parsed.username
+                or parsed.password
+            ):
+                raise RuntimeError("SMARTPRO_REDIRECT_REJECTED")
+            if parsed.hostname == "smartpro.hse.ru" and parsed.path == "/token":
+                value = dict(urllib.parse.parse_qsl(parsed.query)).get("token")
+                if not value:
+                    raise RuntimeError("SMARTPRO_CALLBACK_TOKEN_MISSING")
+                return value
+            headers = temp / "headers.txt"
+            response = subprocess.run(
+                [
+                    "curl",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "30",
+                    "--proto",
+                    "=https",
+                    "--cookie",
+                    str(cookies),
+                    "--cookie-jar",
+                    str(cookies),
+                    "--dump-header",
+                    str(headers),
+                    "--output",
+                    str(temp / "response.html"),
+                    "--write-out",
+                    "%{http_code}",
+                    "--config",
+                    "-",
+                ],
+                input="url = " + json.dumps(url) + "\n",
+                capture_output=True,
+                text=True,
+                timeout=40,
+            )
+            if response.returncode:
+                raise RuntimeError("SMARTPRO_SSO_TRANSPORT_FAILED")
+            status = int(response.stdout)
+            if status not in (301, 302, 303, 307, 308):
+                raise RuntimeError("SMARTPRO_SSO_REFRESH_REQUIRED")
+            locations = re.findall(
+                r"^location:\s*(.*?)\r?$", headers.read_text(), re.I | re.M
+            )
+            if not locations:
+                raise RuntimeError("SMARTPRO_SSO_REDIRECT_MISSING")
+            url = urllib.parse.urljoin(url, locations[-1].strip())
+        raise RuntimeError("SMARTPRO_SSO_TOO_MANY_REDIRECTS")
 
 
 def call(path, token=None, *, method="GET"):
@@ -50,12 +106,10 @@ def call(path, token=None, *, method="GET"):
         )
 
 
-def token(select_role=False):
+def token(select_role=False, *, require_role=True):
     jar_path = DATA / "auth/lms/cookies.txt"
     if not jar_path.exists():
         raise RuntimeError("LMS_SSO_LOGIN_REQUIRED")
-    jar = http.cookiejar.MozillaCookieJar(str(jar_path))
-    jar.load(ignore_discard=True)
     url = call(
         "/api/sso/auth?"
         + urllib.parse.urlencode({"back_url": ORIGIN + "/token", "system-name": "epp"})
@@ -63,19 +117,10 @@ def token(select_role=False):
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme != "https" or parsed.hostname != "saml.hse.ru":
         raise RuntimeError("SMARTPRO_AUTH_ORIGIN_REJECTED")
-    opener = urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(jar), SafeRedirect()
-    )
-    with opener.open(url, timeout=45) as response:
-        final = urllib.parse.urlsplit(response.url)
-    if final.hostname != "smartpro.hse.ru" or final.path != "/token":
-        raise RuntimeError("SMARTPRO_SSO_REFRESH_REQUIRED")
-    value = dict(urllib.parse.parse_qsl(final.query)).get("token")
-    if not value:
-        raise RuntimeError("SMARTPRO_CALLBACK_TOKEN_MISSING")
+    value = sso_callback(url, jar_path)
     user = call("/api/sso/user", value)
     value = user["accessToken"]
-    if not user.get("activeRole"):
+    if require_role and not user.get("activeRole"):
         if not select_role:
             raise RuntimeError("SMARTPRO_ROLE_SELECTION_REQUIRED")
         if [r["name"] for r in user["roles"]] != ["EPP_STUDENT"]:
@@ -99,7 +144,7 @@ def main():
     args = parser.parse_args()
     if args.entity != "user" and (not args.id or args.id <= 0):
         parser.error("positive entity ID required; discover it in your own account")
-    value = token(args.select_student_role)
+    value = token(args.select_student_role, require_role=args.entity != "user")
     path = (
         "/api/sso/user"
         if args.entity == "user"

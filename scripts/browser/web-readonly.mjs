@@ -13,7 +13,7 @@ const statePath = path.join(dataDir, 'auth', 'browser', 'state.json');
 const mailOrigin = 'https://mail.360.yandex.com';
 const elkOrigin = 'https://lk.hse.ru';
 // Selects the full web client response instead of the legacy HTML-only client.
-const userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.0.0 Safari/537.36';
+export const userAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.0.0 Safari/537.36';
 const allowedModels = new Set(['folders', 'messages', 'message-body', 'get-user-emails']);
 const allowedElk = new Set(['/api/get-user', '/api/get-academic-data', '/api/get-myschedule']);
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -67,7 +67,7 @@ async function mailAuth(client, address) {
   return call;
 }
 
-async function mailSync(client, options, config) {
+export async function mailSync(client, options, config, writeOutput = write) {
   const call = await mailAuth(client, config.mail.address);
   // readOnly here controls the web client's folder visibility (e.g. Sent/Drafts),
   // not permission to modify messages. The folders model only returns metadata.
@@ -79,7 +79,7 @@ async function mailSync(client, options, config) {
   const limit = Number(options.limit || 100), folder = String(options.folder || '1');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500 || !/^\d+$/.test(folder)) throw new Error('INVALID_MAIL_LIMIT_OR_FOLDER');
   const selected = [], seen = new Set();
-  let first = 0, more = true, reachedCutoff = false;
+  let first = 0, more = true, reachedCutoff = false, omittedMatching = false;
   const list = offset => call('messages', {mailboxUid: null, current_folder: folder,
     sort_type: 'date', first: offset, count: 100, with_pins: 'no'});
   while (more && selected.length < limit) {
@@ -90,7 +90,7 @@ async function mailSync(client, options, config) {
       if (seen.has(msg.mid)) continue;
       seen.add(msg.mid); added++;
       if (msg.date.timestamp < cutoff) { reachedCutoff = true; continue; }
-      if (selected.length < limit) selected.push(msg);
+      if (selected.length < limit) selected.push(msg); else omittedMatching = true;
     }
     more = Boolean(data.details?.['has-more']); first += messages.length;
     if (reachedCutoff || !messages.length) break;
@@ -115,12 +115,12 @@ async function mailSync(client, options, config) {
   }
   const changed = selected.filter(m => !flagsAfter.has(m.mid) || flagsAfter.get(m.mid) !== Boolean(m.new));
   if (changed.length) throw new Error('MAIL_FLAGS_CHANGED_DURING_READ');
-  write('mail-bodies.json', originals);
-  const recordsFile = write('mail-records.json', records);
+  writeOutput('mail-bodies.json', originals);
+  const recordsFile = writeOutput('mail-records.json', records);
   const result = {records_file: recordsFile, retrieved: records.length, folder, since,
-    limited: selected.length === limit && !reachedCutoff,
+    limited: omittedMatching || (selected.length === limit && more && !reachedCutoff),
     unread_before: before.new, unread_after: after.new, selected_unread_flags_unchanged: true};
-  write('mail-coverage.json', result);
+  writeOutput('mail-coverage.json', result);
   return result;
 }
 

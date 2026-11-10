@@ -123,7 +123,7 @@ def report(online=False):
             try:
                 from .smartpro import token
 
-                token()
+                token(require_role=False)
                 result["sources"]["smartpro"]["online_status"] = "ok"
             except Exception as e:
                 result["sources"]["smartpro"]["online_status"] = (
