@@ -132,6 +132,25 @@ def token(select_role=False, *, require_role=True):
     return value
 
 
+def read_vacancy(value, participant_id, vacancy_id=None):
+    participant = call(f"/api/gateway/v3/storage/participant/{participant_id}", value)
+    linked = participant.get("vacancyId")
+    if not linked or vacancy_id is not None and str(vacancy_id) != str(linked):
+        raise RuntimeError("SMARTPRO_PARTICIPANT_VACANCY_MISMATCH")
+    fields = (
+        "student_filial",
+        "student_faculty",
+        "student_learn_program",
+        "student_edu_level",
+        "student_course",
+    )
+    attrs = {a["code"]: a.get("valueBigint") for a in participant.get("attrs", [])}
+    if any(attrs.get(field) is None for field in fields):
+        raise RuntimeError("SMARTPRO_STUDENT_CONTEXT_MISSING")
+    query = urllib.parse.urlencode({field + "_id": attrs[field] for field in fields})
+    return call(f"/api/gateway/v3/storage/vacancy/{linked}?{query}", value)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("entity", choices=["user", "participant", "vacancy", "project"])
@@ -141,10 +160,25 @@ def main():
         action="store_true",
         help="Allow selecting sole existing student role as login state",
     )
+    parser.add_argument(
+        "--participant-id",
+        type=int,
+        help="vacancy: your participant record supplies student context",
+    )
     args = parser.parse_args()
-    if args.entity != "user" and (not args.id or args.id <= 0):
+    if args.entity == "vacancy" and (
+        not args.participant_id or args.participant_id <= 0
+    ):
+        parser.error("vacancy requires a positive --participant-id for student context")
+    if args.participant_id is not None and args.entity != "vacancy":
+        parser.error("--participant-id applies only to vacancy")
+    if args.entity not in ("user", "vacancy") and (not args.id or args.id <= 0):
         parser.error("positive entity ID required; discover it in your own account")
     value = token(args.select_student_role, require_role=args.entity != "user")
+    if args.entity == "vacancy":
+        if args.id is not None and args.id <= 0:
+            parser.error("positive vacancy ID required")
+        return emit(read_vacancy(value, args.participant_id, args.id))
     path = (
         "/api/sso/user"
         if args.entity == "user"

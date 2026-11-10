@@ -149,3 +149,20 @@ test('SSO import includes only auth domains and credentials require explicit JSO
   fs.writeFileSync(file,'bare-password');assert.throws(()=>credentialsFromFile(file),/LOGIN_CREDENTIALS_JSON_REQUIRED/);
  }finally{fs.rmSync(folder,{recursive:true,force:true});}
 });
+
+test('mail uses absolute timezone-aware bounds and stops at now, not midnight',async()=>{
+ const lower=Date.parse('2030-09-01T00:00:00-04:00');
+ const upper=Date.parse('2030-09-03T12:34:56.124Z');
+ const {client}=fakeMailbox([
+  sampleMail('1','2030-09-03T15:00:00Z'),
+  sampleMail('2','2030-09-03T12:34:56.124Z'),
+  sampleMail('3','2030-09-03T12:34:56.123Z'),
+  sampleMail('4','2030-09-01T04:00:00Z'),
+  sampleMail('5','2030-09-01T03:59:59.999Z'),
+ ]);
+ const saved=new Map();
+ const result=await mailSync(client,{action:'sync',since:'2030-09-01',until:'2030-09-03','since-ms':String(lower),'until-ms':String(upper),limit:10},(name,value)=>{saved.set(name,value);return name;});
+ assert.deepEqual(saved.get('mail-records.json').map(r=>r.id),['mail:web:3','mail:web:4']);
+ assert.equal(result.since_instant,new Date(lower).toISOString());
+ assert.equal(result.until_exclusive,new Date(upper).toISOString());
+});

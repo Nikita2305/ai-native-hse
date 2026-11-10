@@ -10,6 +10,15 @@ from pathlib import Path
 from .common import ROOT, DATA, config, emit, workspace, read_json, write_json
 
 
+def instant_ms(value):
+    delta = value.astimezone(dt.timezone.utc) - dt.datetime(
+        1970, 1, 1, tzinfo=dt.timezone.utc
+    )
+    microseconds = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+    # Mail timestamps have millisecond precision; ceil preserves [lower, upper).
+    return -(-microseconds // 1000)
+
+
 def main(source):
     parser = argparse.ArgumentParser(
         description="Read " + source + " using a local browser session"
@@ -95,7 +104,16 @@ def main(source):
         cmd += ["--since", str(lower.date())]
         cmd += ["--until", str((upper - dt.timedelta(microseconds=1)).date())]
         if source == "mail":
-            cmd += ["--limit", str(args.limit), "--folder", args.folder]
+            cmd += [
+                "--limit",
+                str(args.limit),
+                "--folder",
+                args.folder,
+                "--since-ms",
+                str(instant_ms(lower)),
+                "--until-ms",
+                str(instant_ms(upper)),
+            ]
     if args.action == "attachment":
         if not all((args.mid, args.hid, args.name)):
             parser.error("--mid, --hid and --name required")

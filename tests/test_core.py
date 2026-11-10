@@ -305,7 +305,69 @@ class LmsTests(unittest.TestCase):
             self.assertFalse(responses)
 
 
+class MailInstantTests(unittest.TestCase):
+    def test_timezone_dst_and_current_moment_are_preserved(self):
+        import datetime as dt
+        from ai_native_hse.browser import instant_ms
+        from ai_native_hse.period import resolve_period
+
+        settings = {
+            "module": {
+                "timezone": "America/New_York",
+                "start": "2030-03-10",
+                "end": "2030-03-10",
+            }
+        }
+        lower, upper, _ = resolve_period(settings=settings)
+        self.assertEqual(instant_ms(upper) - instant_ms(lower), 23 * 3600 * 1000)
+        now = dt.datetime(2030, 7, 1, 12, 34, 56, 123456, tzinfo=dt.timezone.utc)
+        value = now + dt.timedelta(microseconds=1)
+        expected = int(now.replace(microsecond=0).timestamp()) * 1000 + 124
+        self.assertEqual(instant_ms(value), expected)
+
+
 class SmartProTests(unittest.TestCase):
+    def test_vacancy_context_is_extracted_and_mismatches_are_rejected(self):
+        import urllib.parse
+        from ai_native_hse import smartpro
+
+        fields = (
+            "student_filial",
+            "student_faculty",
+            "student_learn_program",
+            "student_edu_level",
+            "student_course",
+        )
+        participant = {
+            "vacancyId": 20,
+            "attrs": [
+                {"code": field, "valueBigint": i + 1} for i, field in enumerate(fields)
+            ],
+        }
+        with patch.object(
+            smartpro, "call", side_effect=[participant, {"id": 20, "attrs": []}]
+        ) as api:
+            self.assertEqual(smartpro.read_vacancy("fixture", 10, 20)["id"], 20)
+            self.assertEqual(
+                api.call_args_list[0].args[0], "/api/gateway/v3/storage/participant/10"
+            )
+            url = urllib.parse.urlsplit(api.call_args_list[1].args[0])
+            self.assertEqual(url.path, "/api/gateway/v3/storage/vacancy/20")
+            self.assertEqual(
+                urllib.parse.parse_qs(url.query),
+                {field + "_id": [str(i + 1)] for i, field in enumerate(fields)},
+            )
+        with patch.object(smartpro, "call", return_value=participant) as api:
+            with self.assertRaisesRegex(RuntimeError, "PARTICIPANT_VACANCY_MISMATCH"):
+                smartpro.read_vacancy("fixture", 10, 30)
+            self.assertEqual(api.call_count, 1)
+        with patch.object(
+            smartpro, "call", return_value={"vacancyId": 20, "attrs": []}
+        ) as api:
+            with self.assertRaisesRegex(RuntimeError, "STUDENT_CONTEXT_MISSING"):
+                smartpro.read_vacancy("fixture", 10)
+            self.assertEqual(api.call_count, 1)
+
     def test_sso_encodes_url_and_keeps_callback_token_out_of_process_args(self):
         from ai_native_hse import smartpro
         from types import SimpleNamespace

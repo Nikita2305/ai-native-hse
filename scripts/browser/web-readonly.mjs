@@ -76,10 +76,11 @@ export async function mailSync(client, options, writeOutput = write) {
   const before = await call('folders', folderParams);
   if (options.action === 'folders') return {account: call.account, folders: before.folder, unread: before.new};
   const since = isoDate(options.since);
-  const cutoff = new Date(since + 'T00:00:00+03:00').getTime();
+  const cutoff = options['since-ms'] !== undefined ? Number(options['since-ms']) : new Date(since + 'T00:00:00+03:00').getTime();
   const through = options.until ? isoDate(options.until) : null;
   if (through && through < since) throw new Error('INVALID_MAIL_RANGE');
-  const upper = through ? new Date(through + 'T00:00:00+03:00').getTime() + 86400000 : Infinity;
+  const upper = options['until-ms'] !== undefined ? Number(options['until-ms']) : through ? new Date(through + 'T00:00:00+03:00').getTime() + 86400000 : Infinity;
+  if (!Number.isSafeInteger(cutoff) || (upper !== Infinity && !Number.isSafeInteger(upper)) || upper <= cutoff) throw new Error('INVALID_MAIL_RANGE');
   const limit = Number(options.limit || 100), folder = String(options.folder || '1');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500 || !/^\d+$/.test(folder)) throw new Error('INVALID_MAIL_LIMIT_OR_FOLDER');
   const selected = [], seen = new Set();
@@ -122,7 +123,7 @@ export async function mailSync(client, options, writeOutput = write) {
   if (changed.length) throw new Error('MAIL_FLAGS_CHANGED_DURING_READ');
   writeOutput('mail-bodies.json', originals);
   const recordsFile = writeOutput('mail-records.json', records);
-  const result = {account: call.account, records_file: recordsFile, retrieved: records.length, folder, since,
+  const result = {account: call.account, records_file: recordsFile, retrieved: records.length, folder, since, since_instant: new Date(cutoff).toISOString(), until_exclusive: upper === Infinity ? null : new Date(upper).toISOString(),
     limited: omittedMatching || (selected.length === limit && more && !reachedCutoff),
     unread_before: before.new, unread_after: after.new, selected_unread_flags_unchanged: true};
   writeOutput('mail-coverage.json', result);
@@ -234,7 +235,7 @@ async function main() {
   const [command, action, ...rest] = process.argv.slice(2);
   const options = {action};
   for (let i = 0; i < rest.length; i += 2) {
-    if (!['--since', '--until', '--limit', '--folder', '--mid', '--hid', '--name'].includes(rest[i]) || !rest[i + 1]) throw new Error('INVALID_OPTION');
+    if (!['--since', '--until', '--since-ms', '--until-ms', '--limit', '--folder', '--mid', '--hid', '--name'].includes(rest[i]) || !rest[i + 1]) throw new Error('INVALID_OPTION');
     options[rest[i].slice(2)] = rest[i + 1];
   }
   const seed = statePath;

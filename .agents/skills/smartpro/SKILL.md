@@ -14,3 +14,5 @@ scripts/smartpro/smartpro.sh project PROJECT_ID
 Uses HSE SSO cookies from LMS login. IDs belong to the owner, never assume another student’s IDs. If needed, --select-student-role explicitly selects the sole existing student role as login state. Never apply, approve or submit.
 
 All student state belongs in ignored data/. Never commit secrets or source content.
+
+Vacancy reads require --participant-id ID. The tool fetches the linked participant and supplies student program/faculty/course context automatically. Optional vacancy ID must match the participant record. Never guess missing student context.
