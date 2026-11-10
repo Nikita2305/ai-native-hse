@@ -54,7 +54,6 @@ function fakeMailbox(messages, changeFlags = false) {
   return {client,operations};
 }
 const sampleMail=(mid,date)=>({mid,subject:'Example',date:{timestamp:Date.parse(date)},new:true});
-const sampleConfig={mail:{address:'student@example.org'}};
 
 test('mail limit remains partial when the same page also contains older mail',async()=>{
   const {client,operations}=fakeMailbox([
@@ -62,9 +61,10 @@ test('mail limit remains partial when the same page also contains older mail',as
     sampleMail('3','2030-08-30T10:00:00Z'),
   ]);
   const writes=new Map();
-  const result=await mailSync(client,{action:'sync',since:'2030-09-01',limit:1},sampleConfig,
+  const result=await mailSync(client,{action:'sync',since:'2030-09-01',limit:1},
     (name,data)=>{writes.set(name,data);return name;});
   assert.equal(result.retrieved,1);
+  assert.deepEqual(result.account,["student@example.org"]);
   assert.equal(result.limited,true);
   assert.equal(result.selected_unread_flags_unchanged,true);
   assert.equal(writes.get('mail-records.json')[0].unread,true);
@@ -73,13 +73,13 @@ test('mail limit remains partial when the same page also contains older mail',as
 
 test('mail stops without claiming truncation if every matching message was read',async()=>{
   const {client}=fakeMailbox([sampleMail('1','2030-09-03T10:00:00Z')]);
-  const result=await mailSync(client,{action:'sync',since:'2030-09-01',limit:1},sampleConfig,()=>'/synthetic');
+  const result=await mailSync(client,{action:'sync',since:'2030-09-01',limit:1},()=>'/synthetic');
   assert.equal(result.limited,false);
 });
 
 test('mail refuses a result when individual read flags changed despite a stable counter',async()=>{
   const {client}=fakeMailbox([sampleMail('1','2030-09-03T10:00:00Z')],true);
   let wrote=false;
-  await assert.rejects(mailSync(client,{action:'sync',since:'2030-09-01',limit:1},sampleConfig,()=>{wrote=true;}),/MAIL_FLAGS_CHANGED_DURING_READ/);
+  await assert.rejects(mailSync(client,{action:'sync',since:'2030-09-01',limit:1},()=>{wrote=true;}),/MAIL_FLAGS_CHANGED_DURING_READ/);
   assert.equal(wrote,false);
 });

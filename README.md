@@ -34,7 +34,6 @@ Python-клиент Roots использует только стандартну
 ```json
 {
   "version": 1,
-  "mail": {"address": "student@example.org"},
   "module": {
     "start": "2030-09-01",
     "end": "2030-10-31",
@@ -43,7 +42,7 @@ Python-клиент Roots использует только стандартну
 }
 ```
 
-Замените пример своей почтой, датами начала и конца текущего модуля и часовым поясом.
+Замените пример своими датами начала и конца текущего модуля и часовым поясом.
 Даты имеют формат `YYYY-MM-DD`, обе границы включаются. Шаблон намеренно не содержит
 готового периода: его должен задать пользователь. При смене модуля обновите даты.
 Telegram `dialogs` по умолчанию берёт **обе границы из этого конфига**.
@@ -138,8 +137,7 @@ bash scripts/telegram/telegram.sh history --peer PEER_ID --topic-id TOPIC_ID --l
 
 ### Smart LMS
 
-Заполните `mail.address` в `data/config.json`, если используете пароль без username.
-Создайте приватный файл `data/auth/hse-login.json`: `{"username":"YOUR_LOGIN","password":"YOUR_PASSWORD"}`.
+Создайте приватный файл `data/auth/hse-login.json` с обязательными логином и паролем: `{"username":"YOUR_LOGIN","password":"YOUR_PASSWORD"}`.
 
 ```bash
 bash scripts/lms/lms.sh login --secret-file data/auth/hse-login.json
@@ -159,7 +157,8 @@ SSO cookies сохраняются в `data/auth/lms/cookies.txt`. После в
 
 ### Почта и календарь ЕЛК
 
-В `data/config.json` задайте свой `mail.address` для проверки аккаунта почты.
+Почтовый аккаунт выбирается при входе в браузере; `folders` и `sync` возвращают
+его адреса в поле `account`. Адрес почты в конфиге не нужен.
 
 ```bash
 bash scripts/mail/mail.sh login

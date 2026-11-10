@@ -226,6 +226,29 @@ class RootsTests(unittest.TestCase):
 
 
 class LmsTests(unittest.TestCase):
+    def test_login_requires_explicit_username_and_password_before_network(self):
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as folder:
+            secret = Path(folder) / "login.json"
+            for value in (
+                "password-only",
+                '{"password":"fixture"}',
+                '{"username":"student"}',
+                "[]",
+            ):
+                secret.write_text(value)
+                with (
+                    patch.object(lms.subprocess, "run") as network,
+                    patch.object(lms, "AUTH", Path(folder)),
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "LMS_CREDENTIALS_JSON_REQUIRED|LMS_USERNAME_AND_PASSWORD_REQUIRED",
+                    ):
+                        lms.lms(SimpleNamespace(action="login", secret_file=secret))
+                    network.assert_not_called()
+
     def test_sso_form_post_and_temporary_responses(self):
         from types import SimpleNamespace
 

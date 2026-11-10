@@ -48,7 +48,7 @@ async function jsonResponse(response, label) {
   try { return await response.json(); } catch { throw new Error(label + '_NON_JSON'); }
 }
 
-async function mailAuth(client, address) {
+async function mailAuth(client) {
   const response = await client.get(mailOrigin + '/', {maxRedirects: 0});
   if (response.status() !== 200) throw new Error('MAIL_SESSION_REFRESH_REQUIRED');
   const html = await response.text();
@@ -63,17 +63,18 @@ async function mailAuth(client, address) {
     return model.data;
   };
   const emails = await call('get-user-emails', {mailboxUid: null});
-  if (!emails.userEmails?.some(e => `${e.login}@${e.domain}` === address)) throw new Error('MAIL_ACCOUNT_MISMATCH');
+  if (!emails.userEmails?.length) throw new Error('MAIL_ACCOUNT_UNAVAILABLE');
+  call.account = emails.userEmails.map(e => `${e.login}@${e.domain}`);
   return call;
 }
 
-export async function mailSync(client, options, config, writeOutput = write) {
-  const call = await mailAuth(client, config.mail.address);
+export async function mailSync(client, options, writeOutput = write) {
+  const call = await mailAuth(client);
   // readOnly here controls the web client's folder visibility (e.g. Sent/Drafts),
   // not permission to modify messages. The folders model only returns metadata.
   const folderParams = {mailboxUid: null, isPop3: false, readOnly: false};
   const before = await call('folders', folderParams);
-  if (options.action === 'folders') return {folders: before.folder, unread: before.new};
+  if (options.action === 'folders') return {account: call.account, folders: before.folder, unread: before.new};
   const since = isoDate(options.since);
   const cutoff = new Date(since + 'T00:00:00+03:00').getTime();
   const limit = Number(options.limit || 100), folder = String(options.folder || '1');
@@ -117,7 +118,7 @@ export async function mailSync(client, options, config, writeOutput = write) {
   if (changed.length) throw new Error('MAIL_FLAGS_CHANGED_DURING_READ');
   writeOutput('mail-bodies.json', originals);
   const recordsFile = writeOutput('mail-records.json', records);
-  const result = {records_file: recordsFile, retrieved: records.length, folder, since,
+  const result = {account: call.account, records_file: recordsFile, retrieved: records.length, folder, since,
     limited: omittedMatching || (selected.length === limit && more && !reachedCutoff),
     unread_before: before.new, unread_after: after.new, selected_unread_flags_unchanged: true};
   writeOutput('mail-coverage.json', result);
@@ -130,9 +131,9 @@ export function attachmentParams(options) {
   return {mid: options.mid, hid: options.hid, name: options.name};
 }
 
-async function mailAttachment(client, options, config) {
+async function mailAttachment(client, options) {
   const {mid,hid,name} = attachmentParams(options);
-  const call = await mailAuth(client, config.mail.address);
+  const call = await mailAuth(client);
   const params={mailboxUid:null,isPop3:false,readOnly:false};
   const before=await call('folders',params);
   const root=await client.get(mailOrigin+'/');
@@ -232,7 +233,6 @@ async function main() {
     if (!['--since', '--until', '--limit', '--folder', '--mid', '--hid', '--name'].includes(rest[i]) || !rest[i + 1]) throw new Error('INVALID_OPTION');
     options[rest[i].slice(2)] = rest[i + 1];
   }
-  const config = JSON.parse(fs.readFileSync(path.join(dataDir, 'config.json'), 'utf8'));
   const seed = statePath;
   if (!fs.existsSync(seed)) throw new Error('WEB_SESSION_NOT_CONFIGURED');
   const state = JSON.parse(fs.readFileSync(seed, 'utf8'));
@@ -240,8 +240,8 @@ async function main() {
   const client = await request.newContext({storageState: state, userAgent, timeout: 30000});
   try {
     let result;
-    if (command === 'mail' && ['folders', 'sync'].includes(action)) result = await mailSync(client, options, config);
-    else if (command === 'mail' && action === 'attachment') result = await mailAttachment(client, options, config);
+    if (command === 'mail' && ['folders', 'sync'].includes(action)) result = await mailSync(client, options);
+    else if (command === 'mail' && action === 'attachment') result = await mailAttachment(client, options);
     else if (command === 'calendar' && action === 'sync') result = await calendarSync(client, state, options);
     else if (command === 'calendar' && action === 'profile') {
       const data = await elkGet(client, state, '/api/get-academic-data');

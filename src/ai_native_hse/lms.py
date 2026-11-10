@@ -8,10 +8,9 @@ import re
 import subprocess
 import urllib.parse
 import urllib.request
-from .common import config, emit, secret, workspace
+from .common import emit, secret, workspace
 
 BUILD = AUTH = None
-CONFIG = {}
 
 
 def write(name, value):
@@ -169,7 +168,12 @@ def lms(args):
         try:
             creds = json.loads(value)
         except json.JSONDecodeError:
-            creds = {"username": CONFIG["mail"]["address"], "password": value}
+            raise RuntimeError("LMS_CREDENTIALS_JSON_REQUIRED") from None
+        if not isinstance(creds, dict) or any(
+            not isinstance(creds.get(key), str) or not creds[key].strip()
+            for key in ("username", "password")
+        ):
+            raise RuntimeError("LMS_USERNAME_AND_PASSWORD_REQUIRED")
         nonce = str(dt.datetime.now(dt.timezone.utc).timestamp())
         url, html = get("https://edu.hse.ru/auth/oidckc/?hse_client_nonce=" + nonce)
         url, html = complete_form_post(url, html)
@@ -386,14 +390,14 @@ def lms(args):
 
 
 def main():
-    global BUILD, AUTH, CONFIG
+    global BUILD, AUTH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action", choices=["login", "courses", "contents", "page", "grades", "calendar"]
     )
     parser.add_argument(
         "--secret-file",
-        help="Private JSON {username,password}, or password using configured mail address",
+        help="Private JSON containing explicit username and password",
     )
     parser.add_argument("--course-id", type=int)
     parser.add_argument("--year", type=int, default=dt.date.today().year)
@@ -407,7 +411,6 @@ def main():
         not args.course_id or args.course_id <= 0
     ):
         parser.error("positive --course-id required")
-    CONFIG = config()
     with workspace("lms") as (BUILD, AUTH):
         (BUILD / "lms").mkdir()
         lms(args)

@@ -4,7 +4,6 @@ import {request} from 'playwright';
 import {initValue,mailPayload,userAgent} from './web-readonly.mjs';
 const data=process.env.HSE_DATA_DIR;
 const state=JSON.parse(fs.readFileSync(path.join(data,'auth/browser/state.json')));
-const config=JSON.parse(fs.readFileSync(path.join(data,'config.json')));
 const client=await request.newContext({storageState:state,userAgent,timeout:25000});
 const result={};
 try {
@@ -14,7 +13,7 @@ try {
   const html=await root.text();
   const response=await client.post('https://mail.360.yandex.com/web-api/models/liza1',{data:mailPayload(initValue(html,'_ckey'),initValue(html,'_uid'),[{name:'get-user-emails',params:{mailboxUid:null}}]),maxRedirects:0});
   const model=(await response.json()).models?.find(m=>m.name==='get-user-emails');
-  result.mail=model?.status==='ok'&&model.data.userEmails?.some(e=>`${e.login}@${e.domain}`===config.mail.address)?'ok':'account_mismatch_or_expired';
+  result.mail=model?.status==='ok'&&model.data.userEmails?.length?'ok':'session_invalid';
  }catch{result.mail='session_invalid';}
  try {
   const token=state.origins?.find(o=>o.origin==='https://lk.hse.ru')?.localStorage?.find(x=>x.name==='access_token')?.value;

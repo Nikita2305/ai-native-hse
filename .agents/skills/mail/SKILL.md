@@ -14,3 +14,5 @@ scripts/mail/mail.sh attachment --mid MESSAGE_ID --hid PART_ID --name FILE_NAME
 Uses optional Node/Playwright transport. Session login/import-state is documented in README. Do not load mailbox UI, send mail or mark read. Sync defaults to Inbox; inspect folders to find Sent or other folders. Attachments return base64, not persistent files.
 
 All student state belongs in ignored data/. Never commit secrets or source content.
+
+No mail address belongs in config.json. Browser login chooses the mailbox; folders/sync return its addresses in account so the agent can identify the active session.

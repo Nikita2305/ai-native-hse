@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import subprocess
-from .common import ROOT, DATA, config, emit, workspace, read_json, write_json
+from .common import ROOT, DATA, emit, workspace, read_json, write_json
 
 
 def main(source):
@@ -46,7 +46,7 @@ def main(source):
         raise RuntimeError(
             "BROWSER_DEPENDENCIES_MISSING: run scripts/setup/setup.sh --browser"
         )
-    cfg = config()
+    cfg = read_json(DATA / "config.json", {})
     if args.action == "login":
         result = subprocess.run(
             ["node", str(ROOT / "scripts/browser/login.mjs"), source],
