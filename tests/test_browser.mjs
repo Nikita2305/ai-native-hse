@@ -91,3 +91,61 @@ test('mail respects an explicit upper date as well as the lower date',async()=>{
  assert.equal(result.retrieved,1);
  assert.equal(saved.get('mail-records.json')[0].id,'mail:web:2');
 });
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {login,fillLogin,credentialsFromFile,ssoCookies} from '../scripts/browser/login.mjs';
+
+test('headless login reuses a valid session, verifies access, and saves private state',async()=>{
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'hse-login-test-'));
+ let launchOptions,closed=false,opened=false;
+ const state={cookies:[],origins:[{origin:'https://lk.hse.ru',localStorage:[{name:'access_token',value:'fixture'}]}]};
+ const context={request:{get:async()=>({status:()=>200,json:async()=>({id:'fixture'})})},storageState:async()=>state,newPage:async()=>{opened=true;throw new Error('Unnecessary login page');}};
+ try {
+  const result=await login({source:'calendar',dataDir:folder,launch:async options=>{launchOptions=options;return {newContext:async()=>context,close:async()=>{closed=true;}};}});
+  assert.equal(launchOptions.headless,true);assert.equal(opened,false);assert.equal(closed,true);
+  assert.equal(result.session_saved,true);
+  const file=path.join(folder,'auth/browser/state.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file)),state);
+  assert.equal(fs.statSync(file).mode&0o777,0o600);
+ }finally{fs.rmSync(folder,{recursive:true,force:true});}
+});
+
+test('failed unattended login closes browser and preserves previous state',async()=>{
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'hse-login-test-'));
+ const file=path.join(folder,'auth/browser/state.json');fs.mkdirSync(path.dirname(file),{recursive:true});
+ const previous=JSON.stringify({cookies:[],origins:[]});fs.writeFileSync(file,previous);
+ let closed=false;
+ const page={url:()=> 'https://saml.hse.ru/mfa',goto:async()=>{},isClosed:()=>false,waitForLoadState:async()=>{}};
+ const context={storageState:async()=>({cookies:[],origins:[]}),route:async()=>{},newPage:async()=>page,pages:()=>[page]};
+ try {
+  await assert.rejects(login({source:'calendar',dataDir:folder,launch:async()=>({newContext:async()=>context,close:async()=>{closed=true;}})}),/LOGIN_INTERACTION_REQUIRED/);
+  assert.equal(closed,true);assert.equal(fs.readFileSync(file,'utf8'),previous);
+ }finally{fs.rmSync(folder,{recursive:true,force:true});}
+});
+
+test('login fills HSE credentials only at trusted SSO origins',async()=>{
+ const filled=[];
+ const field={first(){return this;},isVisible:async()=>true,fill:async value=>filled.push(value),click:async()=>{}};
+ const credentials={username:'student@example.org',password:'synthetic-password'};
+ const page={url:()=> 'https://example.org/fake-login',locator:()=>field,getByRole:()=>field};
+ assert.equal(await fillLogin(page,credentials),false);assert.deepEqual(filled,[]);
+ page.url=()=> 'http://saml.hse.ru/login';
+ assert.equal(await fillLogin(page,credentials),false);assert.deepEqual(filled,[]);
+ page.url=()=> 'https://saml.hse.ru/login';
+ assert.equal(await fillLogin(page,credentials),true);assert.deepEqual(filled,[credentials.username,credentials.password]);
+ filled.length=0;page.url=()=> 'https://passport.yandex.com/auth';
+ assert.equal(await fillLogin(page,credentials),true);assert.deepEqual(filled,[credentials.username]);
+});
+
+test('SSO import includes only auth domains and credentials require explicit JSON fields',()=>{
+ const cookies=ssoCookies('saml.hse.ru\tFALSE\t/\tTRUE\t0\tfixture\tvalue\nexample.org\tFALSE\t/\tTRUE\t0\tother\tvalue');
+ assert.equal(cookies.length,1);assert.equal(cookies[0].domain,'saml.hse.ru');
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'hse-login-test-'));
+ try{
+  const file=path.join(folder,'credentials.json');fs.writeFileSync(file,'{"password":"fixture"}');
+  assert.throws(()=>credentialsFromFile(file),/LOGIN_USERNAME_AND_PASSWORD_REQUIRED/);
+  fs.writeFileSync(file,'bare-password');assert.throws(()=>credentialsFromFile(file),/LOGIN_CREDENTIALS_JSON_REQUIRED/);
+ }finally{fs.rmSync(folder,{recursive:true,force:true});}
+});

@@ -16,3 +16,5 @@ Uses optional Node/Playwright transport. Session login/import-state is documente
 All student state belongs in ignored data/. Never commit secrets or source content.
 
 No mail address belongs in config.json. Browser login chooses the mailbox; folders/sync return its addresses in account so the agent can identify the active session.
+
+Default login is headless: login --secret-file PATH reads explicit {username,password} from a private JSON file and reuses HSE SSO cookies. login without credentials tries existing sessions. No browser window or session transfer is normally needed. Use --interactive only when the service requires MFA/manual authentication; never print credential contents.

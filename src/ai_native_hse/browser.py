@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from .common import ROOT, DATA, config, emit, workspace, read_json, write_json
 
 
@@ -20,6 +21,14 @@ def main(source):
     )
     parser.add_argument("action", choices=actions)
     parser.add_argument("--state-file")
+    parser.add_argument(
+        "--secret-file", help="login: private JSON with username and password"
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="login: explicitly open a browser for MFA/manual authentication",
+    )
     parser.add_argument("--since", type=dt.date.fromisoformat)
     parser.add_argument("--until", type=dt.date.fromisoformat)
     parser.add_argument("--limit", type=int, default=100)
@@ -48,12 +57,30 @@ def main(source):
         )
     cfg = config()
     if args.action == "login":
+        command = ["node", str(ROOT / "scripts/browser/login.mjs"), source]
+        if args.secret_file:
+            command += [
+                "--secret-file",
+                str(Path(args.secret_file).expanduser().resolve()),
+            ]
+        if args.interactive:
+            command.append("--interactive")
         result = subprocess.run(
-            ["node", str(ROOT / "scripts/browser/login.mjs"), source],
+            command,
+            capture_output=not args.interactive,
+            text=True,
+            timeout=300,
             env={**os.environ, "HSE_DATA_DIR": str(DATA)},
         )
         if result.returncode:
-            raise RuntimeError("BROWSER_LOGIN_FAILED")
+            message = (result.stderr or "").strip()
+            raise RuntimeError(
+                message
+                if message.isupper() and message.replace("_", "").isalnum()
+                else "BROWSER_LOGIN_FAILED"
+            )
+        if not args.interactive:
+            emit(json.loads(result.stdout))
         return
     cmd = ["node", str(ROOT / "scripts/browser/web-readonly.mjs")]
     cmd += (

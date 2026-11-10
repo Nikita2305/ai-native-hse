@@ -48,7 +48,7 @@ async function jsonResponse(response, label) {
   try { return await response.json(); } catch { throw new Error(label + '_NON_JSON'); }
 }
 
-async function mailAuth(client) {
+export async function mailAuth(client) {
   const response = await client.get(mailOrigin + '/', {maxRedirects: 0});
   if (response.status() !== 200) throw new Error('MAIL_SESSION_REFRESH_REQUIRED');
   const html = await response.text();
@@ -154,7 +154,7 @@ async function mailAttachment(client, options) {
   return {mid,hid,name,content_base64:body.toString('base64'),bytes:body.length,unread_before:before.new,unread_after:after.new};
 }
 
-async function elkGet(client, state, endpoint, query = {}) {
+export async function elkGet(client, state, endpoint, query = {}) {
   if (!allowedElk.has(endpoint)) throw new Error('READ_ONLY_ENDPOINT_REJECTED');
   const token = state.origins?.find(o => o.origin === elkOrigin)?.localStorage?.find(i => i.name === 'access_token')?.value;
   if (!token) throw new Error('ELK_SESSION_REFRESH_REQUIRED');

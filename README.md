@@ -50,8 +50,9 @@ bash scripts/check/check.sh --browser
 ```
 
 На Linux для Chromium могут понадобиться системные библиотеки; установщик
-Playwright сообщит недостающие пакеты. Интерактивный вход требует графической сессии.
-На сервере можно импортировать Playwright storage state, полученный на своём компьютере.
+Playwright сообщит недостающие пакеты. По умолчанию вход работает на сервере через headless Chromium, без окна браузера
+и переноса сессии с компьютера. Графическая сессия нужна только для явно выбранного
+`login --interactive`, например при MFA.
 
 ## Подключение источников
 
@@ -150,8 +151,13 @@ SSO cookies сохраняются в `data/auth/lms/cookies.txt`. После в
 его адреса в поле `account`. Адрес почты в конфиге не нужен.
 
 ```bash
-bash scripts/mail/mail.sh login
+# Тот же приватный JSON с явными username и password, что и для LMS:
+bash scripts/mail/mail.sh login --secret-file data/auth/hse-login.json
+bash scripts/calendar/calendar.sh login --secret-file data/auth/hse-login.json
+# Если HSE SSO / браузерная сессия уже действительна, пароль не требуется:
 bash scripts/calendar/calendar.sh login
+# Только если сервис требует ручного подтверждения/MFA:
+# bash scripts/mail/mail.sh login --interactive
 # Альтернатива интерактивному входу (импорт сам по себе не проверяет сессию):
 bash scripts/mail/mail.sh import-state --state-file /private/path/state.json
 bash scripts/doctor/doctor.sh --online
@@ -162,6 +168,15 @@ bash scripts/calendar/calendar.sh sync --since 2030-09-01 --until 2030-09-30
 bash scripts/calendar/calendar.sh profile
 bash scripts/calendar/calendar.sh refresh-session
 ```
+
+По умолчанию login запускает скрытый Chromium, импортирует существующие cookies
+HSE SSO из LMS, при необходимости заполняет логин и пароль и проверяет доступ
+к метаданным аккаунта. Пароль вводится только на страницах HSE SSO; в Яндекс
+передаётся только логин для корпоративного перенаправления. Входы в почту и ЕЛК
+остаются отдельными командами, но не требуют ручных действий в обычном SSO-сценарии.
+При MFA/капче или изменившейся форме headless-вход вернёт LOGIN_INTERACTION_REQUIRED;
+интерактивный режим включается явно. Сессия сохраняется только после успешной проверки.
+HTML страниц, пароли и сетевые ответы не записываются на диск.
 
 Общая браузерная сессия находится в `data/auth/browser/state.json`. Вход настраивается
 для почты и ЕЛК отдельно, сохранённые cookies объединяются через текущий context.
