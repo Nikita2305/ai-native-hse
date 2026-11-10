@@ -1,0 +1,26 @@
+name: Check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: bash scripts/setup/setup.sh
+      - run: bash scripts/check/check.sh
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: scripts/browser/package-lock.json
+      - run: npm --prefix scripts/browser ci
+      - run: node --test tests/test_browser.mjs
+      - run: node --check scripts/browser/login.mjs && node --check scripts/browser/probe.mjs

@@ -1,0 +1,14 @@
+/data/
+/build/
+/node_modules/
+**/node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+*.session
+*.session-journal
+.env
+.env.*
+*.log
+.claude/skills/
+.cursor/skills/
