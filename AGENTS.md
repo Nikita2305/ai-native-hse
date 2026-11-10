@@ -5,6 +5,10 @@ track-to-source map. Do not solve coursework or create a persistent content arch
 as part of this framework's maintenance.
 
 Start with README.md. Run `scripts/hse/hse.sh init`, then `scripts/doctor/doctor.sh`.
+Before source use, fill data/config.json with the user’s mail address and module.start,
+module.end, module.timezone. Telegram dialogs requires both period boundaries, defaults
+to configured dates, and permits independent --since/--until overrides. Never request
+unbounded discovery. For current-module questions, use the configured module period.
 Use separate source utilities under scripts/<name>/. Shared Python code is in
 src/ai_native_hse/. Skills are canonical in .agents/skills/; run link-skills for Claude.
 

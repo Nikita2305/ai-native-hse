@@ -384,6 +384,46 @@ class SmartProTests(unittest.TestCase):
 
 
 class TelegramDiscoveryTests(unittest.TestCase):
+    def test_required_period_config_defaults_and_independent_overrides(self):
+        import datetime as dt
+        from types import SimpleNamespace
+        from ai_native_hse.telegram import discovery_window
+
+        settings = {
+            "module": {
+                "start": "2030-09-01",
+                "end": "2030-09-30",
+                "timezone": "Europe/Moscow",
+            }
+        }
+        since, until = discovery_window(
+            SimpleNamespace(since=None, until=None), settings
+        )
+        self.assertEqual(since.isoformat(), "2030-09-01T00:00:00+03:00")
+        self.assertEqual(until.isoformat(), "2030-10-01T00:00:00+03:00")
+        since, until = discovery_window(
+            SimpleNamespace(since=dt.date(2030, 9, 3), until=None), settings
+        )
+        self.assertEqual(since.day, 3)
+        self.assertEqual(until.month, 10)
+        since, until = discovery_window(
+            SimpleNamespace(since=None, until=dt.date(2030, 9, 5)), settings
+        )
+        self.assertEqual(since.day, 1)
+        self.assertEqual(until.day, 6)
+        for settings in (
+            {},
+            {"module": {"start": "2030-09-01"}},
+            {"module": {"start": "bad", "end": "2030-09-03"}},
+            {"module": {"start": "2030-09-10", "end": "2030-09-01"}},
+        ):
+            with self.assertRaises(ValueError):
+                discovery_window(SimpleNamespace(since=None, until=None), settings)
+        since, until = discovery_window(
+            SimpleNamespace(since=dt.date(2030, 9, 1), until=dt.date(2030, 9, 2)), {}
+        )
+        self.assertEqual(until.day, 3)
+
     def test_groups_and_channels_only_without_content_or_membership_requests(self):
         import datetime as dt
         from types import SimpleNamespace
@@ -409,12 +449,26 @@ class TelegramDiscoveryTests(unittest.TestCase):
                 raise AssertionError("Discovery must not inspect message content")
 
         dialogs = [
-            Dialog(1, "Example unrelated group", dt.datetime(2000, 1, 1), True),
-            Dialog(2, "Another group", None),
+            Dialog(
+                1,
+                "Example unrelated group",
+                dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc),
+                True,
+            ),
+            Dialog(2, "Another group", dt.datetime(2000, 1, 2, tzinfo=dt.timezone.utc)),
             Dialog(3, "Private contact", None, user=True),
             Dialog(4, "Bot", None, user=True),
             Dialog(5, "Saved Messages", None, user=True),
-            Dialog(6, "Example channel", None, channel=True),
+            Dialog(
+                7, "Outside period", dt.datetime(2001, 1, 1, tzinfo=dt.timezone.utc)
+            ),
+            Dialog(8, "Unknown activity", None),
+            Dialog(
+                6,
+                "Example channel",
+                dt.datetime(2000, 1, 3, tzinfo=dt.timezone.utc),
+                channel=True,
+            ),
         ]
 
         class Client:
@@ -447,12 +501,21 @@ class TelegramDiscoveryTests(unittest.TestCase):
                 patch.object(telegram, "telegram_metadata", AsyncMock()) as metadata,
                 contextlib.redirect_stdout(output),
             ):
-                asyncio.run(telegram.telegram(SimpleNamespace(action="dialogs")))
+                asyncio.run(
+                    telegram.telegram(
+                        SimpleNamespace(
+                            action="dialogs",
+                            since=dt.date(2000, 1, 1),
+                            until=dt.date(2000, 1, 3),
+                        )
+                    )
+                )
             value = json.loads(output.getvalue())
             self.assertEqual(
                 [row["peer_id"] for row in value["chats"]], ["1", "2", "6"]
             )
             self.assertTrue(value["complete"])
+            self.assertEqual(value["unknown_activity_excluded"], 1)
             self.assertTrue(value["chats"][0]["archived"])
             self.assertEqual(
                 value["chats"][1]["access_reason"], "CONTENT_ACCESS_NOT_VERIFIED"

@@ -6,7 +6,8 @@ import datetime as dt
 import json
 import re
 import urllib.parse
-from .common import emit, secret, workspace, write_json
+from .common import DATA, read_json, emit, secret, workspace, write_json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .telegram_access import metadata as telegram_metadata, require_content_access
 from .lms import record
 
@@ -18,6 +19,30 @@ def write(name, value):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(value, ensure_ascii=False))
     return target
+
+
+def discovery_window(args, settings=None):
+    settings = read_json(DATA / "config.json", {}) if settings is None else settings
+    module = settings.get("module", {})
+    start = args.since or module.get("start")
+    end = args.until or module.get("end")
+    if not start or not end:
+        raise ValueError(
+            "Period required: fill module.start and module.end in data/config.json or pass --since and --until"
+        )
+    try:
+        zone = ZoneInfo(module.get("timezone", "UTC"))
+        start = start if isinstance(start, dt.date) else dt.date.fromisoformat(start)
+        end = end if isinstance(end, dt.date) else dt.date.fromisoformat(end)
+        if end < start:
+            raise ValueError("Period end must not precede start")
+        since = dt.datetime.combine(start, dt.time.min, zone)
+        until = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, zone)
+    except (TypeError, ZoneInfoNotFoundError) as error:
+        raise ValueError(
+            "Invalid period dates or module.timezone in data/config.json"
+        ) from error
+    return since, until
 
 
 async def telegram(args):
@@ -100,10 +125,19 @@ async def telegram(args):
                 )
         elif args.action == "dialogs":
             rows = []
+            since, until = discovery_window(args)
+            unknown_dates = 0
             # No folder filter means all folders including archived dialogs.
             async for dialog in client.iter_dialogs():
                 if dialog.is_user or not (dialog.is_group or dialog.is_channel):
                     continue
+                if since or until:
+                    if dialog.date is None:
+                        unknown_dates += 1
+                        continue
+                    activity = dialog.date.astimezone(dt.timezone.utc)
+                    if since and activity < since or until and activity >= until:
+                        continue
                 row = {
                     "peer_id": str(dialog.id),
                     "title": dialog.name,
@@ -135,7 +169,18 @@ async def telegram(args):
                     "retrieved_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 },
             )
-            print(json.dumps({"chats": rows, "dialogs": len(rows), "complete": True}))
+            emit(
+                {
+                    "chats": rows,
+                    "dialogs": len(rows),
+                    "complete": True,
+                    "activity_window": {
+                        "since": since.isoformat() if since else None,
+                        "until_exclusive": until.isoformat() if until else None,
+                    },
+                    "unknown_activity_excluded": unknown_dates,
+                }
+            )
         elif args.action == "topics":
             if not args.peer:
                 raise RuntimeError("peer is required")
@@ -380,7 +425,24 @@ def main():
         default=0,
         help="Read history older than this message ID",
     )
+    parser.add_argument(
+        "--since",
+        type=dt.date.fromisoformat,
+        help="dialogs: last activity on/after this date in module.timezone",
+    )
+    parser.add_argument(
+        "--until",
+        type=dt.date.fromisoformat,
+        help="dialogs: last activity through this date in module.timezone (inclusive)",
+    )
     args = parser.parse_args()
+    if args.action != "dialogs" and (args.since or args.until):
+        parser.error("activity window options apply only to dialogs")
+    if args.action == "dialogs":
+        try:
+            discovery_window(args)
+        except ValueError as error:
+            parser.error(str(error))
     if args.action in ("send-code", "sign-in", "password") and not args.secret_file:
         parser.error("--secret-file required")
     if (
