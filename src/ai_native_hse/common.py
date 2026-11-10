@@ -33,10 +33,13 @@ def write_json(path, value):
 
 
 def config():
-    value = read_json(DATA / "config.json")
-    if value is None:
-        raise RuntimeError("CONFIG_MISSING: run scripts/hse/hse.sh init")
-    return value
+    defaults = read_json(ROOT / "scripts/hse/templates/config.json")
+    local = read_json(DATA / "config.json", {})
+    return {
+        **defaults,
+        **local,
+        "module": {**defaults.get("module", {}), **local.get("module", {})},
+    }
 
 
 def secret(path):

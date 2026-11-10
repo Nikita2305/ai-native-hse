@@ -6,8 +6,8 @@ import datetime as dt
 import json
 import re
 import urllib.parse
-from .common import DATA, read_json, emit, secret, workspace, write_json
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from .common import emit, secret, workspace, write_json
+from .period import resolve_period
 from .telegram_access import metadata as telegram_metadata, require_content_access
 from .lms import record
 
@@ -21,27 +21,8 @@ def write(name, value):
     return target
 
 
-def discovery_window(args, settings=None):
-    settings = read_json(DATA / "config.json", {}) if settings is None else settings
-    module = settings.get("module", {})
-    start = args.since or module.get("start")
-    end = args.until or module.get("end")
-    if not start or not end:
-        raise ValueError(
-            "Period required: fill module.start and module.end in data/config.json or pass --since and --until"
-        )
-    try:
-        zone = ZoneInfo(module.get("timezone", "UTC"))
-        start = start if isinstance(start, dt.date) else dt.date.fromisoformat(start)
-        end = end if isinstance(end, dt.date) else dt.date.fromisoformat(end)
-        if end < start:
-            raise ValueError("Period end must not precede start")
-        since = dt.datetime.combine(start, dt.time.min, zone)
-        until = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, zone)
-    except (TypeError, ZoneInfoNotFoundError) as error:
-        raise ValueError(
-            "Invalid period dates or module.timezone in data/config.json"
-        ) from error
+def discovery_window(args, settings=None, now=None):
+    since, until, _ = resolve_period(args.since, args.until, settings, now)
     return since, until
 
 

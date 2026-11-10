@@ -1,4 +1,93 @@
 {
-  "version": 1,
-  "module": {"start": null, "end": null, "timezone": "Europe/Moscow"}
+  "version": 2,
+  "module": {
+    "timezone": "Europe/Moscow"
+  },
+  "calendar_valid_until": "2028-08-31",
+  "modules": [
+    {
+      "id": "2025-2026-m1",
+      "name": "Модуль 1, 2025/2026 учебный год",
+      "start": "2025-09-01",
+      "end": "2025-10-24",
+      "source": "https://studyabroad.hse.ru/incoming/year"
+    },
+    {
+      "id": "2025-2026-m2",
+      "name": "Модуль 2, 2025/2026 учебный год",
+      "start": "2025-11-01",
+      "end": "2025-12-19",
+      "source": "https://studyabroad.hse.ru/incoming/year"
+    },
+    {
+      "id": "2025-2026-m3",
+      "name": "Модуль 3, 2025/2026 учебный год",
+      "start": "2026-01-09",
+      "end": "2026-03-24",
+      "source": "https://studyabroad.hse.ru/incoming/year"
+    },
+    {
+      "id": "2025-2026-m4",
+      "name": "Модуль 4, 2025/2026 учебный год",
+      "start": "2026-04-01",
+      "end": "2026-06-19",
+      "source": "https://studyabroad.hse.ru/incoming/year"
+    },
+    {
+      "id": "2026-2027-m1",
+      "name": "Модуль 1, 2026/2027 учебный год",
+      "start": "2026-09-01",
+      "end": "2026-10-25",
+      "source": "https://www.hse.ru/pubs/share/direct/1138696873.pdf"
+    },
+    {
+      "id": "2026-2027-m2",
+      "name": "Модуль 2, 2026/2027 учебный год",
+      "start": "2026-11-01",
+      "end": "2026-12-20",
+      "source": "https://www.hse.ru/pubs/share/direct/1138696873.pdf"
+    },
+    {
+      "id": "2026-2027-m3",
+      "name": "Модуль 3, 2026/2027 учебный год",
+      "start": "2027-01-09",
+      "end": "2027-03-24",
+      "source": "https://www.hse.ru/pubs/share/direct/1138696873.pdf"
+    },
+    {
+      "id": "2026-2027-m4",
+      "name": "Модуль 4, 2026/2027 учебный год",
+      "start": "2027-04-01",
+      "end": "2027-06-20",
+      "source": "https://www.hse.ru/pubs/share/direct/1138696873.pdf"
+    },
+    {
+      "id": "2027-2028-m1",
+      "name": "Модуль 1, 2027/2028 учебный год",
+      "start": "2027-09-01",
+      "end": "2027-10-24",
+      "source": "https://www.hse.ru/mirror/pubs/share/1205356126.pdf"
+    },
+    {
+      "id": "2027-2028-m2",
+      "name": "Модуль 2, 2027/2028 учебный год",
+      "start": "2027-11-01",
+      "end": "2027-12-20",
+      "source": "https://www.hse.ru/mirror/pubs/share/1205356126.pdf"
+    },
+    {
+      "id": "2027-2028-m3",
+      "name": "Модуль 3, 2027/2028 учебный год",
+      "start": "2028-01-09",
+      "end": "2028-03-24",
+      "source": "https://www.hse.ru/mirror/pubs/share/1205356126.pdf"
+    },
+    {
+      "id": "2027-2028-m4",
+      "name": "Модуль 4, 2027/2028 учебный год",
+      "start": "2028-04-01",
+      "end": "2028-06-20",
+      "source": "https://www.hse.ru/mirror/pubs/share/1205356126.pdf"
+    }
+  ]
 }

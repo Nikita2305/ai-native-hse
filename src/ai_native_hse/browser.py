@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import subprocess
-from .common import ROOT, DATA, emit, workspace, read_json, write_json
+from .common import ROOT, DATA, config, emit, workspace, read_json, write_json
 
 
 def main(source):
@@ -46,7 +46,7 @@ def main(source):
         raise RuntimeError(
             "BROWSER_DEPENDENCIES_MISSING: run scripts/setup/setup.sh --browser"
         )
-    cfg = read_json(DATA / "config.json", {})
+    cfg = config()
     if args.action == "login":
         result = subprocess.run(
             ["node", str(ROOT / "scripts/browser/login.mjs"), source],
@@ -62,16 +62,12 @@ def main(source):
         else [source, args.action]
     )
     if args.action == "sync":
-        since = args.since or cfg.get("module", {}).get("start")
-        if not since:
-            parser.error("--since required (or configure module.start)")
-        cmd += ["--since", str(since)]
-        if source == "calendar":
-            until = args.until or cfg.get("module", {}).get("end")
-            if not until:
-                parser.error("--until required (or configure module.end)")
-            cmd += ["--until", str(until)]
-        else:
+        from .period import resolve_period
+
+        lower, upper, _ = resolve_period(args.since, args.until, cfg)
+        cmd += ["--since", str(lower.date())]
+        cmd += ["--until", str((upper - dt.timedelta(microseconds=1)).date())]
+        if source == "mail":
             cmd += ["--limit", str(args.limit), "--folder", args.folder]
     if args.action == "attachment":
         if not all((args.mid, args.hid, args.name)):

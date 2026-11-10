@@ -77,6 +77,9 @@ export async function mailSync(client, options, writeOutput = write) {
   if (options.action === 'folders') return {account: call.account, folders: before.folder, unread: before.new};
   const since = isoDate(options.since);
   const cutoff = new Date(since + 'T00:00:00+03:00').getTime();
+  const through = options.until ? isoDate(options.until) : null;
+  if (through && through < since) throw new Error('INVALID_MAIL_RANGE');
+  const upper = through ? new Date(through + 'T00:00:00+03:00').getTime() + 86400000 : Infinity;
   const limit = Number(options.limit || 100), folder = String(options.folder || '1');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500 || !/^\d+$/.test(folder)) throw new Error('INVALID_MAIL_LIMIT_OR_FOLDER');
   const selected = [], seen = new Set();
@@ -90,6 +93,7 @@ export async function mailSync(client, options, writeOutput = write) {
     for (const msg of messages) {
       if (seen.has(msg.mid)) continue;
       seen.add(msg.mid); added++;
+      if (msg.date.timestamp >= upper) continue;
       if (msg.date.timestamp < cutoff) { reachedCutoff = true; continue; }
       if (selected.length < limit) selected.push(msg); else omittedMatching = true;
     }

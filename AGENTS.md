@@ -5,10 +5,12 @@ track-to-source map. Do not solve coursework or create a persistent content arch
 as part of this framework's maintenance.
 
 Start with README.md. Run `scripts/hse/hse.sh init`, then `scripts/doctor/doctor.sh`.
-Before source use, fill data/config.json with module.start,
-module.end, module.timezone. Telegram dialogs requires both period boundaries, defaults
-to configured dates, and permits independent --since/--until overrides. Never request
-unbounded discovery. For current-module questions, use the configured module period.
+No manual configuration is needed: default timezone is Europe/Moscow and the sourced
+calendar selects the current module, or the last completed module through now in gaps.
+Use hse period to inspect the selection. --since/--until override individual boundaries.
+Optional local module.start/end overrides support nonstandard programs; calendar dates
+and named modules live in scripts/hse/templates/config.json. Never invent future dates
+or request unbounded discovery. See README for calendar coverage and refresh rules.
 Use separate source utilities under scripts/<name>/. Shared Python code is in
 src/ai_native_hse/. Skills are canonical in .agents/skills/; run link-skills for Claude.
 

@@ -83,3 +83,11 @@ test('mail refuses a result when individual read flags changed despite a stable 
   await assert.rejects(mailSync(client,{action:'sync',since:'2030-09-01',limit:1},()=>{wrote=true;}),/MAIL_FLAGS_CHANGED_DURING_READ/);
   assert.equal(wrote,false);
 });
+
+test('mail respects an explicit upper date as well as the lower date',async()=>{
+ const {client}=fakeMailbox([sampleMail('1','2030-10-02T10:00:00Z'),sampleMail('2','2030-09-03T10:00:00Z')]);
+ const saved=new Map();
+ const result=await mailSync(client,{action:'sync',since:'2030-09-01',until:'2030-09-30',limit:10},(name,value)=>{saved.set(name,value);return name;});
+ assert.equal(result.retrieved,1);
+ assert.equal(saved.get('mail-records.json')[0].id,'mail:web:2');
+});

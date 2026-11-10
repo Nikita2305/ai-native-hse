@@ -406,6 +406,57 @@ class SmartProTests(unittest.TestCase):
                 self.assertEqual(request.call_count, 1)
 
 
+class AutomaticPeriodTests(unittest.TestCase):
+    def test_current_module_and_gap_through_exact_now(self):
+        import datetime as dt
+        from ai_native_hse.common import ROOT, read_json
+        from ai_native_hse.period import resolve_period
+
+        defaults = read_json(ROOT / "scripts/hse/templates/config.json")
+        now = dt.datetime(2026, 11, 10, 12, tzinfo=dt.timezone.utc)
+        lower, upper, meta = resolve_period(settings=defaults, now=now)
+        self.assertEqual(lower.isoformat(), "2026-11-01T00:00:00+03:00")
+        self.assertEqual(upper.isoformat(), "2026-12-21T00:00:00+03:00")
+        self.assertEqual(meta["module"]["id"], "2026-2027-m2")
+        # Exam session, New Year holidays and summer all retain post-module activity.
+        for day in ("2026-12-25", "2027-01-05", "2027-08-15"):
+            now = dt.datetime.fromisoformat(day + "T12:00:00+03:00")
+            lower, upper, meta = resolve_period(settings=defaults, now=now)
+            self.assertEqual(meta["mode"], "between_modules")
+            self.assertEqual(upper, now + dt.timedelta(microseconds=1))
+            self.assertEqual(
+                lower.date().isoformat(),
+                "2027-04-01" if day.endswith("08-15") else "2026-11-01",
+            )
+
+    def test_year_boundary_moscow_midnight_leap_year_and_calendar_expiry(self):
+        import datetime as dt
+        from ai_native_hse.common import ROOT, read_json
+        from ai_native_hse.period import resolve_period
+
+        defaults = read_json(ROOT / "scripts/hse/templates/config.json")
+        for stamp, identifier in [
+            ("2026-10-31T21:00:00+00:00", "2026-2027-m2"),
+            ("2027-09-01T00:00:00+03:00", "2027-2028-m1"),
+            ("2028-02-29T12:00:00+03:00", "2027-2028-m3"),
+        ]:
+            _, _, meta = resolve_period(
+                settings=defaults, now=dt.datetime.fromisoformat(stamp)
+            )
+            self.assertEqual(meta["module"]["id"], identifier)
+        with self.assertRaisesRegex(ValueError, "calendar needs updating"):
+            resolve_period(
+                settings=defaults, now=dt.datetime(2030, 1, 1, tzinfo=dt.timezone.utc)
+            )
+        lower, upper, _ = resolve_period(
+            dt.date(2030, 1, 1),
+            dt.date(2030, 1, 2),
+            defaults,
+            dt.datetime(2030, 1, 1, tzinfo=dt.timezone.utc),
+        )
+        self.assertEqual(upper.day, 3)
+
+
 class TelegramDiscoveryTests(unittest.TestCase):
     def test_required_period_config_defaults_and_independent_overrides(self):
         import datetime as dt
