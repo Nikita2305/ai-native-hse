@@ -383,5 +383,84 @@ class SmartProTests(unittest.TestCase):
                 self.assertEqual(request.call_count, 1)
 
 
+class TelegramDiscoveryTests(unittest.TestCase):
+    def test_groups_and_channels_only_without_content_or_membership_requests(self):
+        import datetime as dt
+        from types import SimpleNamespace
+        from ai_native_hse import telegram
+
+        class Dialog:
+            def __init__(
+                self, identifier, title, date, archived=False, user=False, channel=False
+            ):
+                self.id = identifier
+                self.name = title
+                self.date = date
+                self.archived = archived
+                self.is_group = not user and not channel
+                self.is_channel = channel
+                self.is_user = user
+                self.entity = SimpleNamespace(
+                    username=None, participants_count=None, is_self=False
+                )
+
+            @property
+            def message(self):
+                raise AssertionError("Discovery must not inspect message content")
+
+        dialogs = [
+            Dialog(1, "Example unrelated group", dt.datetime(2000, 1, 1), True),
+            Dialog(2, "Another group", None),
+            Dialog(3, "Private contact", None, user=True),
+            Dialog(4, "Bot", None, user=True),
+            Dialog(5, "Saved Messages", None, user=True),
+            Dialog(6, "Example channel", None, channel=True),
+        ]
+
+        class Client:
+            async def connect(self):
+                pass
+
+            async def disconnect(self):
+                pass
+
+            async def is_user_authorized(self):
+                return True
+
+            async def iter_dialogs(self):
+                for dialog in dialogs:
+                    yield dialog
+
+        fake = SimpleNamespace(
+            TelegramClient=lambda *a, **kw: Client(),
+            functions=SimpleNamespace(),
+            types=SimpleNamespace(),
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            auth = Path(folder)
+            (auth / "credentials.json").write_text('{"api_id":1,"api_hash":"fixture"}')
+            output = io.StringIO()
+            with (
+                patch.dict("sys.modules", {"telethon": fake}),
+                patch.object(telegram, "AUTH", auth),
+                patch.object(telegram, "write"),
+                patch.object(telegram, "telegram_metadata", AsyncMock()) as metadata,
+                contextlib.redirect_stdout(output),
+            ):
+                asyncio.run(telegram.telegram(SimpleNamespace(action="dialogs")))
+            value = json.loads(output.getvalue())
+            self.assertEqual(
+                [row["peer_id"] for row in value["chats"]], ["1", "2", "6"]
+            )
+            self.assertTrue(value["complete"])
+            self.assertTrue(value["chats"][0]["archived"])
+            self.assertEqual(
+                value["chats"][1]["access_reason"], "CONTENT_ACCESS_NOT_VERIFIED"
+            )
+            self.assertEqual(value["chats"][2]["kind"], "channel")
+            self.assertTrue(all(not row["content_allowed"] for row in value["chats"]))
+            metadata.assert_not_awaited()
+
+
 if __name__ == "__main__":
     unittest.main()

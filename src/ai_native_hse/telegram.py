@@ -6,12 +6,11 @@ import datetime as dt
 import json
 import re
 import urllib.parse
-from .common import config, emit, secret, workspace, write_json
+from .common import emit, secret, workspace, write_json
 from .telegram_access import metadata as telegram_metadata, require_content_access
 from .lms import record
 
 BUILD = AUTH = None
-CONFIG = {}
 
 
 def write(name, value):
@@ -101,16 +100,10 @@ async def telegram(args):
                 )
         elif args.action == "dialogs":
             rows = []
-            cached = set()
-            cutoff = (
-                dt.datetime.fromisoformat(CONFIG["module"]["start"]).replace(
-                    tzinfo=__import__("zoneinfo").ZoneInfo(CONFIG["module"]["timezone"])
-                )
-                if CONFIG["module"].get("start")
-                else dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-            )
             # No folder filter means all folders including archived dialogs.
             async for dialog in client.iter_dialogs():
+                if dialog.is_user or not (dialog.is_group or dialog.is_channel):
+                    continue
                 row = {
                     "peer_id": str(dialog.id),
                     "title": dialog.name,
@@ -123,42 +116,16 @@ async def telegram(args):
                     if dialog.date
                     else None,
                 }
-                if dialog.is_user:
-                    row.update(
-                        kind="user",
-                        content_allowed=False,
-                        participants_count=None,
-                        access_reason="SAVED_MESSAGES_FORBIDDEN"
-                        if getattr(dialog.entity, "is_self", False)
-                        else "PRIVATE_DIALOG_FORBIDDEN",
-                    )
-                elif str(dialog.id) in cached or (
-                    dialog.date
-                    and dialog.date >= cutoff
-                    and re.search(
-                        r"вшэ|уиб|hse|практикум|команд|семинар|консалт|инжинир|философ|дизайн|strategy|правов|niche|insighteer",
-                        dialog.name or "",
-                        re.I,
-                    )
-                ):
-                    try:
-                        row.update(await telegram_metadata(client, dialog.entity))
-                    except Exception as exc:
-                        row.update(
-                            content_allowed=False,
-                            participants_count=None,
-                            access_reason="METADATA_UNAVAILABLE",
-                            metadata_error=type(exc).__name__,
-                            retry_after_seconds=getattr(exc, "seconds", None),
-                        )
-                else:
-                    row.update(
-                        content_allowed=False,
-                        participants_count=getattr(
-                            dialog.entity, "participants_count", None
-                        ),
-                        access_reason="NOT_CHECKED_NO_CONTENT_NEEDED",
-                    )
+                # The agent chooses relevant sources; content commands
+                # independently verify membership before reading.
+                row.update(
+                    kind="group" if dialog.is_group else "channel",
+                    content_allowed=False,
+                    participants_count=getattr(
+                        dialog.entity, "participants_count", None
+                    ),
+                    access_reason="CONTENT_ACCESS_NOT_VERIFIED",
+                )
                 rows.append(row)
             write(
                 "telegram/dialogs.json",
@@ -168,7 +135,7 @@ async def telegram(args):
                     "retrieved_at": dt.datetime.now(dt.timezone.utc).isoformat(),
                 },
             )
-            print(json.dumps({"chats": rows, "dialogs": len(rows)}))
+            print(json.dumps({"chats": rows, "dialogs": len(rows), "complete": True}))
         elif args.action == "topics":
             if not args.peer:
                 raise RuntimeError("peer is required")
@@ -384,7 +351,7 @@ async def telegram(args):
 
 
 def main():
-    global BUILD, AUTH, CONFIG
+    global BUILD, AUTH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
@@ -425,7 +392,6 @@ def main():
         parser.error("--before-id must be nonnegative")
     if not 1 <= args.limit <= 1000:
         parser.error("--limit must be 1..1000")
-    CONFIG = config()
     with workspace("telegram") as (BUILD, AUTH):
         try:
             asyncio.run(telegram(args))
